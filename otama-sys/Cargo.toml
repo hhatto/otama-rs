@@ -1,10 +1,9 @@
 [package]
-name = "otama"
+name = "otama-sys"
 version = "0.1.0"
 authors = ["Hideo Hattori <hhatto.jp@gmail.com>"]
 
 [dependencies]
-otama-sys = { version = "0.1", path = "otama-sys" }
 
 [build-dependencies]
 bindgen = "0.23"
