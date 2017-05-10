@@ -1,0 +1,9 @@
+[package]
+name = "otama"
+version = "0.1.0"
+authors = ["Hideo Hattori <hattori-h@klab.com>"]
+
+[dependencies]
+
+[build-dependencies]
+bindgen = "0.23"
