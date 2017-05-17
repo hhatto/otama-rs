@@ -3,9 +3,26 @@ extern crate otama_sys;
 use otama_sys::*;
 use std::mem;
 use std::ffi;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct Otama(*const otama_t);
+
+#[derive(Debug)]
+pub struct OtamaResult {
+    id: String,
+    similarity: f32,
+}
+
+#[derive(Debug)]
+pub enum Value {
+    Null,
+    Int(i32),
+    Float(f32),
+    String(String),
+    Array(Vec<Value>),
+    Hash(HashMap<String, Value>),
+}
 
 #[derive(Debug)]
 pub enum Status {
@@ -50,12 +67,114 @@ impl Otama {
         }
     }
 
-    pub fn search(&mut self) -> Result<Status, Error> {
-        /*
+    pub fn insert(&mut self, file: &str) -> Result<String, Error> {
+        let f = ffi::CString::new(file).unwrap();
         unsafe {
-            match otama_search_filee(self.0 as *mut _, ) {
+            let mut id = mem::uninitialized();
+            let mut c_hexid = mem::zeroed();
+            match otama_insert_file(self.0 as *mut _, &mut id, f.as_ptr()) {
+                otama_status_t::OTAMA_STATUS_OK => {
+                    otama_id_bin2hexstr(&mut c_hexid as *mut _, &mut id);
+                    // FIXME: segv
+                    //let s = ffi::CString::from_raw(c_hexid as *mut ::std::os::raw::c_char);
+                    //let hexid = String::from(s.to_str().unwrap());
+                    let hexid = "hoge".to_string();
+                    Ok(hexid)
+                },
+                otama_status_t::OTAMA_STATUS_NODATA => Err(Error::Nodata),
+                otama_status_t::OTAMA_STATUS_INVALID_ARGUMENTS => Err(Error::InvalidArguments),
+                otama_status_t::OTAMA_STATUS_ASSERTION_FAILURE => Err(Error::AssertionFailure),
+                otama_status_t::OTAMA_STATUS_SYSERROR => Err(Error::SysError),
+                otama_status_t::OTAMA_STATUS_NOT_IMPLEMENTED => Err(Error::NotImplemented),
+                _ => Err(Error::Unknown),
+            }
         }
-        */
-        unimplemented!();
+    }
+
+    pub fn search(&mut self, result_num: i32, file: &str) -> Result<Vec<OtamaResult>, Error> {
+        let f = ffi::CString::new(file).unwrap();
+        unsafe {
+            let mut results = mem::uninitialized();
+            match otama_search_file(self.0 as *mut _, &mut results as *mut *mut otama_result_t, result_num, f.as_ptr()) {
+                otama_status_t::OTAMA_STATUS_OK => {
+                    let mut r: Vec<OtamaResult> = Vec::new();
+                    let n = otama_result_count(results as *mut _);
+                    println!("search. n={}", n);
+                    for i in 0..n {
+                        let c_hexid = ffi::CString::new("").unwrap();
+                        let id = otama_result_id(results as *mut _, i);
+                        otama_id_bin2hexstr(c_hexid.as_ptr() as *mut _, id);
+                        let hexid = String::from(c_hexid.to_str().unwrap());
+
+                        let otama_result = otama_result_value(results as *mut _, i);
+                        //let similarity = self.get_similarity_from_result(otama_result);
+                        let similarity = match self.variant2obj(otama_result) {
+                            Value::Hash(v) => {
+                                //println!("{:?}", v);
+                                println!("hoge");
+                                let _ = v.get("similarity").unwrap();
+                                    0.0
+                            },
+                            _ => 0.0,
+                        };
+                        r.push(OtamaResult{
+                            id: hexid,
+                            similarity: similarity,
+                        });
+                    }
+                    Ok(r)
+                },
+                otama_status_t::OTAMA_STATUS_NODATA => Err(Error::Nodata),
+                otama_status_t::OTAMA_STATUS_INVALID_ARGUMENTS => Err(Error::InvalidArguments),
+                otama_status_t::OTAMA_STATUS_ASSERTION_FAILURE => Err(Error::AssertionFailure),
+                otama_status_t::OTAMA_STATUS_SYSERROR => Err(Error::SysError),
+                otama_status_t::OTAMA_STATUS_NOT_IMPLEMENTED => Err(Error::NotImplemented),
+                _ => Err(Error::Unknown),
+            }
+        }
+    }
+
+    fn variant2obj(&mut self, result: *mut otama_variant_t) -> Value {
+        unsafe {
+            match otama_variant_type(result) {
+                otama_variant_type_e::OTAMA_VARIANT_TYPE_INT => {
+                    let v = otama_variant_to_int(result);
+                    Value::Int(v as i32)
+                },
+                otama_variant_type_e::OTAMA_VARIANT_TYPE_FLOAT => {
+                    let v = otama_variant_to_float(result);
+                    Value::Float(v as f32)
+                },
+                otama_variant_type_e::OTAMA_VARIANT_TYPE_STRING => {
+                    let v = otama_variant_to_string(result);
+                    let s = ffi::CString::from_raw(v as *mut _);
+                    Value::String(String::from(s.to_str().unwrap()))
+                },
+                otama_variant_type_e::OTAMA_VARIANT_TYPE_ARRAY => {
+                    let cnt = otama_variant_array_count(result);
+                    let mut v: Vec<Value> = Vec::new();
+                    for i in 0..cnt {
+                        println!("{:?}", i);
+                        v.push(self.variant2obj(otama_variant_array_at(result, i)));
+                    }
+                    Value::Array(v)
+                },
+                otama_variant_type_e::OTAMA_VARIANT_TYPE_HASH => {
+                    println!("hash");
+                    let keys = otama_variant_hash_keys(result);
+                    let cnt = otama_variant_array_count(result);
+                    let mut h: HashMap<String, Value> = HashMap::new();
+                    for i in 0..cnt {
+                        println!("{:?}", i);
+                        let v = self.variant2obj(otama_variant_hash_at2(result, otama_variant_array_at(keys, i)));
+                        let c_k = otama_variant_to_string(otama_variant_array_at(keys, i));
+                        let k = ffi::CString::from_raw(c_k as *mut _);
+                        h.insert(String::from(k.to_str().unwrap()), v);
+                    }
+                    Value::Hash(h)
+                },
+                _ => Value::Null,
+            }
+        }
     }
 }
