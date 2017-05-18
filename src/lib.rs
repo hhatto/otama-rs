@@ -108,7 +108,7 @@ impl Otama {
         let f = ffi::CString::new(file).unwrap();
         unsafe {
             let mut results = mem::uninitialized();
-            match otama_search_file(self.0 as *mut _, &mut results as *mut *mut otama_result_t, result_num, f.as_ptr()) {
+            let ret_code = match otama_search_file(self.0 as *mut _, &mut results as *mut *mut _, result_num, f.as_ptr()) {
                 otama_status_t::OTAMA_STATUS_OK => {
                     let mut r: Vec<OtamaResult> = Vec::new();
                     let n = otama_result_count(results as *mut _);
@@ -144,7 +144,9 @@ impl Otama {
                 otama_status_t::OTAMA_STATUS_SYSERROR => Err(Error::SysError),
                 otama_status_t::OTAMA_STATUS_NOT_IMPLEMENTED => Err(Error::NotImplemented),
                 _ => Err(Error::Unknown),
-            }
+            };
+            otama_result_free(&mut results as *mut *mut _);
+            ret_code
         }
     }
 
