@@ -16,11 +16,16 @@ fn main() {
             Ok(path) => {
                 match o.insert(path.to_str().unwrap()) {
                     Err(e) => println!("insert() error. e={:?}", e),
-                    Ok(id) => println!("insert {:?}. id={:?}", path, id),
+                    Ok(id) => println!("insert id={:?} file={:?}. ", id, path),
                 }
             },
             Err(e) => println!("error={:?}", e),
         }
+    }
+
+    match o.pull() {
+        Err(e) => println!("pull() error. e={:?}", e),
+        _ => {},
     }
 
     match o.search(10, "./image/lena.jpg") {
